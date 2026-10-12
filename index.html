@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clipcatch – Video downloader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&family=Figtree:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #eef3f8; --ink: #14213d; --muted: #5b6b85; --line: #c9d5e4;
+  --accent: #ff4d2e; --accent-ink: #fff; --card: #ffffff; --ok: #1d7a4f; --err: #b3261e;
+}
+:root[data-theme="dark"] {
+  --paper: #0e1525; --ink: #e8eefc; --muted: #93a3c2; --line: #2b3a5c;
+  --card: #172038; --ok: #4cc38a; --err: #ff8a80;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.55 Figtree, system-ui, sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 28px 20px 80px; }
+.top { display: flex; justify-content: flex-end; margin-bottom: 18px; }
+.theme { padding: 8px 14px; font-size: .9rem; background: var(--card); color: var(--ink); box-shadow: none; }
+h1 { font: 800 clamp(2.6rem, 9vw, 4.2rem)/.95 "Bricolage Grotesque", sans-serif; letter-spacing: -.03em; margin: 0 0 14px; }
+.lead { color: var(--muted); margin: 0 0 32px; max-width: 46ch; }
+.row { display: flex; gap: 10px; }
+input[type=url] { flex: 1; min-width: 0; padding: 15px 16px; font: inherit; border: 2px solid var(--ink); border-radius: 10px; background: var(--card); color: var(--ink); }
+button { font: 600 1rem Figtree, sans-serif; padding: 15px 22px; border: 2px solid var(--ink); border-radius: 10px; background: var(--accent); color: var(--accent-ink); cursor: pointer; box-shadow: 3px 3px 0 var(--ink); }
+button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+button:disabled { opacity: .6; cursor: wait; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+#msg { min-height: 1.5em; margin: 14px 2px 0; font-size: .95rem; }
+#msg.err { color: var(--err); } #msg.ok { color: var(--ok); }
+#result { display: none; margin-top: 22px; background: var(--card); border: 2px solid var(--ink); border-radius: 14px; overflow: hidden; }
+#result img { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; background: var(--line); }
+.body { padding: 18px; }
+.body h2 { font: 500 1.25rem/1.25 "Bricolage Grotesque", sans-serif; margin: 0 0 4px; }
+.meta { color: var(--muted); font-size: .9rem; margin: 0 0 16px; }
+label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 6px; }
+select { width: 100%; padding: 12px; font: inherit; border: 2px solid var(--ink); border-radius: 10px; background: var(--card); color: var(--ink); margin-bottom: 14px; }
+.body button { width: 100%; }
+#prog { display: none; margin-top: 16px; }
+.bar { height: 14px; border: 2px solid var(--ink); border-radius: 8px; overflow: hidden; background: var(--paper); }
+.bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+#progtext { margin: 6px 0 0; font-size: .88rem; color: var(--muted); }
+#history { margin-top: 34px; display: none; }
+#history h3 { font: 500 1.05rem "Bricolage Grotesque", sans-serif; margin: 0 0 8px; }
+#history ul { list-style: none; margin: 0; padding: 0; }
+#history li button { width: 100%; text-align: left; padding: 10px 12px; margin-bottom: 8px; font-weight: 400; font-size: .92rem; background: var(--card); color: var(--ink); box-shadow: none; border-width: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#clear { background: none; border: none; box-shadow: none; padding: 0; color: var(--muted); text-decoration: underline; font-size: .85rem; }
+.note { margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: .88rem; }
+@media (max-width: 480px) { .row { flex-direction: column; } }
+@media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><button class="theme" id="theme" type="button" aria-label="Switch light or dark theme">Dark mode</button></div>
+
+  <h1>Paste a link.<br>Get the video.</h1>
+  <p class="lead">Works with links from most video sites. Pick a quality, or save just the audio as MP3.</p>
+
+  <div class="row">
+    <input id="url" type="url" placeholder="https://example.com/watch?v=..." aria-label="Video link" autocomplete="off">
+    <button id="check" type="button">Find video</button>
+  </div>
+  <p id="msg" role="status"></p>
+
+  <section id="result" aria-live="polite">
+    <img id="thumb" alt="">
+    <div class="body">
+      <h2 id="title"></h2>
+      <p class="meta" id="meta"></p>
+      <label for="quality">Quality</label>
+      <select id="quality"></select>
+      <button id="dl" type="button">Download</button>
+      <div id="prog">
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="barwrap"><span id="bar"></span></div>
+        <p id="progtext"></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="history">
+    <h3>Recent</h3>
+    <ul id="histlist"></ul>
+    <button id="clear" type="button">Clear history</button>
+  </section>
+
+  <p class="note">Only download videos you own, have permission to use, or that are free to share. Respect each website's terms and copyright law. Videos up to {{ max_minutes }} minutes.
+  {% if not has_ffmpeg %}<br>FFmpeg isn't installed on this server, so 1080p+ and MP3 are unavailable.{% endif %}</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const msg = (t, c = "") => { $("msg").textContent = t; $("msg").className = c; };
+let currentUrl = "", currentTitle = "";
+
+/* ---------- theme ---------- */
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $("theme").textContent = t === "dark" ? "Light mode" : "Dark mode";
+}
+let saved = null;
+try { saved = localStorage.getItem("cc_theme"); } catch (e) {}
+applyTheme(saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+$("theme").addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyTheme(next);
+  try { localStorage.setItem("cc_theme", next); } catch (e) {}
+});
+
+/* ---------- history ---------- */
+function loadHistory() { try { return JSON.parse(localStorage.getItem("cc_history")) || []; } catch (e) { return []; } }
+function saveHistory(list) { try { localStorage.setItem("cc_history", JSON.stringify(list)); } catch (e) {} }
+function renderHistory() {
+  const list = loadHistory(), ul = $("histlist");
+  ul.textContent = "";
+  list.forEach(item => {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button"; b.textContent = item.title; b.title = item.url;
+    b.addEventListener("click", () => { $("url").value = item.url; $("check").click(); window.scrollTo({top: 0, behavior: "smooth"}); });
+    li.appendChild(b); ul.appendChild(li);
+  });
+  $("history").style.display = list.length ? "block" : "none";
+}
+function addHistory(title, url) {
+  const list = loadHistory().filter(i => i.url !== url);
+  list.unshift({title, url});
+  saveHistory(list.slice(0, 5));
+  renderHistory();
+}
+$("clear").addEventListener("click", () => { saveHistory([]); renderHistory(); });
+renderHistory();
+
+/* ---------- find video ---------- */
+function fmtDuration(s) { if (!s) return ""; const m = Math.floor(s / 60), r = s % 60; return `${m}:${String(r).padStart(2, "0")}`; }
+
+$("check").addEventListener("click", async () => {
+  const url = $("url").value.trim();
+  if (!url) { msg("Paste a video link first.", "err"); return; }
+  $("check").disabled = true; $("result").style.display = "none"; $("prog").style.display = "none"; msg("Looking for the video…");
+  try {
+    const res = await fetch("/api/info", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({url})});
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    currentUrl = url; currentTitle = d.title;
+    $("thumb").src = d.thumbnail || "";
+    $("title").textContent = d.title;
+    $("meta").textContent = [d.uploader, fmtDuration(d.duration)].filter(Boolean).join(" • ");
+    const q = $("quality"); q.innerHTML = "";
+    q.add(new Option("Best available", "best"));
+    d.heights.forEach(h => q.add(new Option(h + "p", h)));
+    q.add(new Option("MP3 (audio)", "mp3"));
+    q.add(new Option("Audio only (original)", "audio"));
+    $("result").style.display = "block";
+    msg("");
+  } catch (e) { msg(e.message || "Could not load that link.", "err"); }
+  $("check").disabled = false;
+});
+
+/* ---------- download with progress ---------- */
+function setProgress(p, text) {
+  $("bar").style.width = p + "%";
+  $("barwrap").setAttribute("aria-valuenow", p);
+  $("progtext").textContent = text;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+$("dl").addEventListener("click", async () => {
+  $("dl").disabled = true; msg(""); $("prog").style.display = "block"; setProgress(0, "Starting…");
+  try {
+    const res = await fetch("/api/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({url: currentUrl, quality: $("quality").value})});
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+
+    while (true) {
+      await sleep(800);
+      const pr = await fetch("/api/progress/" + d.job_id);
+      const p = await pr.json();
+      if (!pr.ok) throw new Error(p.error);
+      if (p.status === "error") throw new Error(p.error);
+      if (p.status === "done") {
+        setProgress(100, "Done");
+        const a = document.createElement("a");
+        a.href = "/api/file/" + d.job_id; a.download = ""; document.body.appendChild(a); a.click(); a.remove();
+        addHistory(currentTitle, currentUrl);
+        msg("Done. Check your downloads folder.", "ok");
+        break;
+      }
+      const bits = [p.status === "processing" ? "Converting…" : p.percent + "%", p.speed, p.eta != null ? p.eta + "s left" : ""].filter(Boolean);
+      setProgress(p.percent, bits.join(" • "));
+    }
+  } catch (e) {
+    $("prog").style.display = "none";
+    msg(e.message || "Download failed.", "err");
+  }
+  $("dl").disabled = false;
+});
+
+$("url").addEventListener("keydown", e => { if (e.key === "Enter") $("check").click(); });
+</script>
+</body>
+</html>
