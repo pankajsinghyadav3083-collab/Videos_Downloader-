@@ -17,8 +17,18 @@ app = Flask(__name__)
 limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
-MAX_MINUTES = int(os.environ.get("MAX_MINUTES", 60))   # longest video allowed
-MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", 2))      # downloads running at once
+MAX_MINUTES = int(os.environ.get("MAX_MINUTES", 30))   # longest video allowed
+MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", 1))      # downloads running at once
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "your-email@example.com")
+
+# Public mode: only these sites are accepted. For use on your own computer only,
+# set ALLOW_ALL=1 to accept any link (you are then responsible for what you download).
+ALLOW_ALL = os.environ.get("ALLOW_ALL") == "1"
+ALLOWED_DOMAINS = [
+    d.strip().lower()
+    for d in os.environ.get("ALLOWED_DOMAINS", "archive.org,wikimedia.org").split(",")
+    if d.strip()
+]
 JOB_TTL = 15 * 60                                      # keep finished files 15 min
 
 jobs = {}
@@ -32,6 +42,10 @@ def check_url(url):
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("Enter a full link starting with http:// or https://")
+    if not ALLOW_ALL:
+        host = parsed.hostname.lower()
+        if not any(host == d or host.endswith("." + d) for d in ALLOWED_DOMAINS):
+            raise ValueError("This site isn't supported. Supported sites: " + ", ".join(ALLOWED_DOMAINS) + ".")
     try:
         for info in socket.getaddrinfo(parsed.hostname, None):
             ip = ipaddress.ip_address(info[4][0])
@@ -118,16 +132,26 @@ def run_job(job_id, url, quality):
             raise RuntimeError(f"No file was produced. Videos longer than {MAX_MINUTES} minutes are not allowed.")
         best = max(files, key=lambda f: os.path.getsize(os.path.join(job["tmp"], f)))
         job.update(status="done", percent=100, file=os.path.join(job["tmp"], best), speed="", eta=None)
-    except yt_dlp.utils.DownloadError:
+    except yt_dlp.utils.DownloadError as e:
+        app.logger.error("DOWNLOAD DownloadError: %s", e)
         job.update(status="error", error="Could not download this video.")
     except Exception as e:
+        app.logger.exception("DOWNLOAD failed: %s", e)
         job.update(status="error", error=str(e) or "Download failed.")
 
 
 # ---------- routes ----------
 @app.get("/")
 def index():
-    return render_template("index.html", has_ffmpeg=HAS_FFMPEG, max_minutes=MAX_MINUTES)
+    return render_template(
+        "index.html", has_ffmpeg=HAS_FFMPEG, max_minutes=MAX_MINUTES,
+        allow_all=ALLOW_ALL, domains=ALLOWED_DOMAINS,
+    )
+
+
+@app.get("/terms")
+def terms():
+    return render_template("terms.html", contact=CONTACT_EMAIL, domains=ALLOWED_DOMAINS, allow_all=ALLOW_ALL)
 
 
 @app.post("/api/info")
@@ -150,9 +174,11 @@ def info():
         )
     except ValueError as e:
         return jsonify(error=str(e)), 400
-    except yt_dlp.utils.DownloadError:
+    except yt_dlp.utils.DownloadError as e:
+        app.logger.error("INFO DownloadError: %s", e)
         return jsonify(error="No downloadable video found at that link."), 422
-    except Exception:
+    except Exception as e:
+        app.logger.exception("INFO failed: %s", e)
         return jsonify(error="Something went wrong. Try again."), 500
 
 
